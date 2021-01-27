@@ -90,16 +90,13 @@ class Turtle(Account):
 
     def __init__(self, klineList: pd.DataFrame, money):
         super(Turtle, self).__init__(money)
-        self.__klineList=pd.DataFrame(klineList)
+        self.__klineList = klineList
         # self.__kline = kline
         self.timeIndex = 0
-        print(klineList.index())
-        quit()
-        self.time = self.__kline.index[0]
+        self.time = klineList[0][1]['kline'].index[0]
         self.add_atr()
         self.add_top()
         self.add_low()
-        # print(self.__kline.tail(20))
 
     def next_time(self):
         self.timeIndex += 1
@@ -110,82 +107,88 @@ class Turtle(Account):
             return False
 
     def run(self):
-        money = self.cash()
-        self.__kline['cash'] = self.cash()
-        for i in range(2674):
-            self.__kline.loc[self.time, 'cash'] = self.cash()
-            buy_price = self.__kline.loc[self.time, 'high20']
-            sell_price = self.__kline.loc[self.time, 'low20']
-            atr = self.__kline.loc[self.time, 'atr']  # 保存昨天的ATR
-            self.next_time()
+        money=pd.DataFrame()
+        money.loc[self.time,'cash']=self.cash() # 期初资金
+        # self.__klineList[0][1]['cash'] = self.cash()
+        # num=len(self.__klineList[0][1]['kline'].index)
+        # print(self.__klineList[0][1]['kline'].loc[]['atr'])
+        for i in self.__klineList[0][1]['kline']:
+            for k in klineList:
+                self.next_time()
+                money.loc[self.time,'cash'] = self.cash()
+                buy_price = k[1]['kline'].loc[self.time, 'high20']
+                sell_price = k[1]['kline'].loc[self.time, 'low20']
 
-            if np.isnan(atr):
-                continue
-            if self.posSize == 0:
-                self.posSize = int(self.cash() * self.stop_loss / (atr * self.ahand_num))
-            print(self.time, ' 总资金:', self.cash(), '  持仓:', self.holding, '  ATR:', atr, '头寸规模:', self.posSize, '可用资金:',
-                  self.available(), '保证金:', self.margin())
+                atr = k[1]['kline'].loc[self.time, 'atr']  # 保存ATR
 
-            self.refresh(self.security,
-                         self.__kline.loc[self.time, 'high'],
-                         self.__kline.loc[self.time, 'low'],
-                         self.__kline.loc[self.time, 'close'],
-                         self.time)
-            position = self.get_position(self.security)
-            orderList = self.order()
-            if position is not None:
-                # 海龟系统里记录的持仓数目与账户内不同，说明有新交易
-                if self.holding != position['holding']:
-                    self.holding = position['holding']
-                    self.side = position['side']
-                    self.level = self.holding // self.posSize
-                    self.atr = self.__kline.loc[position['last_time'], 'atr']
 
+                if np.isnan(atr):
+                    continue
+                if self.posSize == 0:
+                    self.posSize = int(self.cash() * self.stop_loss / (atr * self.ahand_num))
+                print(self.time, ' 总资金:', self.cash(), '  持仓:', self.holding, '  ATR:', atr, '头寸规模:', self.posSize, '可用资金:',
+                      self.available(), '保证金:', self.margin())
+
+                self.refresh(self.security,
+                             k[1]['kline'].loc[self.time, 'high'],
+                             k[1]['kline'].loc[self.time, 'low'],
+                             k[1]['kline'].loc[self.time, 'close'],
+                             self.time)
+                position = self.get_position(self.security)
+                orderList = self.order()
+                if position is not None:
+                    # 海龟系统里记录的持仓数目与账户内不同，说明有新交易
+                    if self.holding != position['holding']:
+                        self.holding = position['holding']
+                        self.side = position['side']
+                        self.level = self.holding // self.posSize
+                        self.atr = k[1]['kline'].loc[position['last_time'], 'atr']
+
+                        for orderItem in orderList[::-1]:
+                            # 去掉反向挂单
+                            if orderItem['security'] == self.security and orderItem['side'] != self.side:
+                                self.del_order(orderItem)
+
+                    # 删除止损单
                     for orderItem in orderList[::-1]:
-                        # 去掉反向挂单
-                        if orderItem['security'] == self.security and orderItem['side'] != self.side:
+                        # 删掉止损挂单
+                        if orderItem['security'] == self.security and orderItem['side'] == 0:
                             self.del_order(orderItem)
 
-                # 删除止损单
-                for orderItem in orderList[::-1]:
-                    # 删掉止损挂单
-                    if orderItem['security'] == self.security and orderItem['side'] == 0:
-                        self.del_order(orderItem)
+                    # 设立止损单
+                    if self.side > 0:
+                        stop_price = max(self.__kline.loc[self.time, 'low10'],
+                                         position['opening_price'] + (self.level - 1) * 0.25 * self.atr - 2 * self.atr
+                                         )
+                        stop_price = int(round(stop_price))
+                        self.add_order(self.securityName, self.security, 0, stop_price, position['holding'], self.time)
+                    elif self.side < 0:
+                        stop_price = min(self.__kline.loc[self.time, 'high10'],
+                                         position['opening_price'] - (self.level - 1) * 0.25 * self.atr + 2 * self.atr
+                                         )
 
-                # 设立止损单
-                if self.side > 0:
-                    stop_price = max(self.__kline.loc[self.time, 'low10'],
-                                     position['opening_price'] + (self.level - 1) * 0.25 * self.atr - 2 * self.atr
-                                     )
-                    stop_price = int(round(stop_price))
-                    self.add_order(self.securityName, self.security, 0, stop_price, position['holding'], self.time)
-                elif self.side < 0:
-                    stop_price = min(self.__kline.loc[self.time, 'high10'],
-                                     position['opening_price'] - (self.level - 1) * 0.25 * self.atr + 2 * self.atr
-                                     )
+                        stop_price = int(round(stop_price))
+                        self.add_order(self.securityName, self.security, 0, stop_price, position['holding'], self.time)
 
-                    stop_price = int(round(stop_price))
-                    self.add_order(self.securityName, self.security, 0, stop_price, position['holding'], self.time)
+                elif self.side != 0:
+                    # 清空仓位记录
+                    self.side = 0
+                    self.holding = 0  # 记录总共持有多少手
+                    self.level = 0  # 记录第几个头寸 0表示空仓
+                    self.openTime = ''  # 开仓日期
+                    self.atr = 0
 
-            elif self.side != 0:
-                # 清空仓位记录
-                self.side = 0
-                self.holding = 0  # 记录总共持有多少手
-                self.level = 0  # 记录第几个头寸 0表示空仓
-                self.openTime = ''  # 开仓日期
-                self.atr = 0
+                if self.holding <= 0:
+                    self.clear_order()
+                    # 头寸规模 = 账户的1 % / (N * 每一点价值)
+                    self.posSize = int(self.cash() * self.stop_loss / (atr * self.ahand_num)) * 1
 
-            if self.holding <= 0:
-                self.clear_order()
-                # 头寸规模 = 账户的1 % / (N * 每一点价值)
-                self.posSize = int(self.cash() * self.stop_loss / (atr * self.ahand_num)) * 1
-
-                for j in range(4):
-                    n = int(round(0.5 * atr * j, 0))
-                    buy_price = int(buy_price)
-                    sell_price = int(sell_price)
-                    self.add_order(self.securityName, self.security, 1, buy_price + n, self.posSize, self.time)
-                    self.add_order(self.securityName, self.security, -1, sell_price - n, self.posSize, self.time)
+                    for j in range(4):
+                        n = int(round(0.5 * atr * j, 0))
+                        buy_price = int(buy_price)
+                        sell_price = int(sell_price)
+                        self.add_order(self.securityName, self.security, 1, buy_price + n, self.posSize, self.time)
+                        self.add_order(self.securityName, self.security, -1, sell_price - n, self.posSize, self.time)
 
         print('账户最大值:', self.__kline['cash'].max())
         print('账户最小值:', self.__kline['cash'].min())
@@ -198,22 +201,28 @@ class Turtle(Account):
         return
 
     def add_atr(self):
-        for securityName in self.__klineList.keys():
-            self.__klineList[securityName]['atr'] = round(talib.ATR(kline['high'], kline['low'], kline['close'], timeperiod=self.ATRTIME), 0)
 
+        for k in self.__klineList:
+            k[1]['kline']['atr'] = round(
+                talib.ATR(k[1]['kline']['high'], k[1]['kline']['low'], k[1]['kline']['close'], timeperiod=self.ATRTIME),
+                0)
     def add_top(self):
-        for securityName in self.__klineList.keys():
-            self.__klineList[securityName]['high20'] = self.__klineList[securityName]['high'].rolling(window=20).max()
-            self.__klineList[securityName]['high20'].fillna(value=pd.Series.cummax(self.__klineList[securityName]['high']), inplace=True)
-            self.__klineList[securityName]['high10'] = self.__klineList[securityName]['high'].rolling(window=10).max()
-            self.__klineList[securityName]['high10'].fillna(value=pd.Series.cummax(self.__klineList[securityName]['high']), inplace=True)
+        for k in self.__klineList:
+            k[1]['kline']['high20'] = k[1]['kline']['high'].rolling(window=20).max()
+            k[1]['kline']['high20'].fillna(
+                value=pd.Series.cummax(k[1]['kline']['high']), inplace=True)
+            k[1]['kline']['high10'] = k[1]['kline']['high'].rolling(window=10).max()
+            k[1]['kline']['high10'].fillna(
+                value=pd.Series.cummax(k[1]['kline']['high']), inplace=True)
 
     def add_low(self):
-        for securityName in self.__klineList.keys():
-            self.__klineList[securityName]['low20'] = self.__klineList[securityName]['low'].rolling(window=20).min()
-            self.__klineList[securityName]['low20'].fillna(value=pd.Series.cummin(self.__klineList[securityName]['low']), inplace=True)
-            self.__klineList[securityName]['low10'] = self.__klineList[securityName]['low'].rolling(window=10).min()
-            self.__klineList[securityName]['low10'].fillna(value=pd.Series.cummin(self.__klineList[securityName]['low']), inplace=True)
+        for k in self.__klineList:
+            k[1]['kline']['low20'] = k[1]['kline']['low'].rolling(window=20).min()
+            k[1]['kline']['low20'].fillna(
+                value=pd.Series.cummin(k[1]['kline']['low']), inplace=True)
+            k[1]['kline']['low10'] = k[1]['kline']['low'].rolling(window=10).min()
+            k[1]['kline']['low10'].fillna(
+                value=pd.Series.cummin(k[1]['kline']['low']), inplace=True)
 
         # self.__kline['low20'] = self.__kline['low'].rolling(window=20).min()
         # self.__kline['low20'].fillna(value=pd.Series.cummin(self.__kline['low']), inplace=True)
@@ -230,18 +239,21 @@ class Turtle(Account):
 
 # klineList = pd.DataFrame()
 # klineList['螺纹钢']=pd.DataFrame({'security':'RB8888'})
-klineList={
-    '螺纹钢':{'security':'RB8888'},
-    '棕榈油': {'security': 'P8888'},
-    '豆粕': {'security': 'M8888'},
-    'PTA': {'security': 'TA8888'}
-}
+klineList = [
+    ['螺纹钢', {'security': 'RB2005'}]
+    # ['棕榈油', {'security': 'P8888'}],
+    # ['豆粕', {'security': 'M8888'}],
+    # ['PTA', {'security': 'TA8888'}]
+]
+# print(klineList)
+# klineList=pd.DataFrame(klineList)
 
-for securityName in klineList.keys():
-    # print(('data/{}.csv'.format(securityList[securityName]['security'])))
-    kline = pd.read_csv('data/{}.csv'.format(klineList[securityName]['security']), index_col=0)
+for k in klineList:
+    kline = pd.read_csv('data/{}.csv'.format(k[1]['security']), index_col=0)
     kline = kline[['close', 'high', 'low']]
-    klineList[securityName]['kline']=kline
+    k[1]['kline'] = kline
+
+# print(klineList[k]['kline'])
 turtle = Turtle(klineList, 100000)
 
-# turtle.run()
+turtle.run()
