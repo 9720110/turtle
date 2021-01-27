@@ -3,12 +3,12 @@ import talib
 import numpy as np
 import futures
 import matplotlib.pyplot as plt
+from futures import Account
 
 from pylab import mpl
-mpl.rcParams['font.sans-serif'] = ['Microsoft YaHei']    # 指定默认字体：解决plot不能显示中文问题
-mpl.rcParams['axes.unicode_minus'] = False           # 解决保存图像是负号'-'显示为方块的问题
 
-
+mpl.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体：解决plot不能显示中文问题
+mpl.rcParams['axes.unicode_minus'] = False  # 解决保存图像是负号'-'显示为方块的问题
 
 """
 海龟交易法则
@@ -63,21 +63,22 @@ mpl.rcParams['axes.unicode_minus'] = False           # 解决保存图像是负�
             7.在成交量没有大幅萎缩前滚动合约
             8.选取尽可能多的不相干的市场交易
             9.选定市场后就不要轻易退出该市场
-        
+
 输入： 
 a.add_order('螺纹钢', 'RB1910', -1, 1020, 10)
 M8888.XDCE
 """
 
 
-class Turtle:
-    ahand_num= 10  #当前品种每手数量
-    stop_loss = 0.02 #每个头寸最大亏损
+class Turtle(Account):
+    ahand_num = 10  # 当前品种每手数量
+    stop_loss = 0.02  # 每个头寸最大亏损
 
-    securityName = '棕榈油'   #
+    securityName = '棕榈油'  #
     security = 'P8888'
     ATRTIME = 20  # N=20
-    __kline = pd.DataFrame()
+    __klineList = pd.DataFrame()
+    # __kline = pd.DataFrame()
     side = 0  # 1多 / -1空
     holding = 0  # 记录总共持有多少手
     posSize = 0  # 头寸规模，即每次开仓手数
@@ -85,11 +86,15 @@ class Turtle:
     openTime = ''  # 开仓日期
     time = ''  # 当前K线时间
     timeIndex = 0  # 当前时间所在行
-    atr = 0   #开仓日的ATR
+    atr = 0  # 开仓日的ATR
 
-    def __init__(self, kline: pd.DataFrame):
-        self.__kline = kline
+    def __init__(self, klineList: pd.DataFrame, money):
+        super(Turtle, self).__init__(money)
+        self.__klineList=pd.DataFrame(klineList)
+        # self.__kline = kline
         self.timeIndex = 0
+        print(klineList.index())
+        quit()
         self.time = self.__kline.index[0]
         self.add_atr()
         self.add_top()
@@ -104,63 +109,63 @@ class Turtle:
         else:
             return False
 
-    def run(self,money):
-        fa = futures.Account(money)
-        self.__kline['cash']=money
+    def run(self):
+        money = self.cash()
+        self.__kline['cash'] = self.cash()
         for i in range(2674):
-            self.__kline.loc[self.time,'cash']=fa.cash()
+            self.__kline.loc[self.time, 'cash'] = self.cash()
             buy_price = self.__kline.loc[self.time, 'high20']
             sell_price = self.__kline.loc[self.time, 'low20']
-            atr = self.__kline.loc[self.time, 'atr']  #保存昨天的ATR
+            atr = self.__kline.loc[self.time, 'atr']  # 保存昨天的ATR
             self.next_time()
 
             if np.isnan(atr):
                 continue
             if self.posSize == 0:
-                self.posSize = int(fa.cash() * self.stop_loss / (atr * self.ahand_num))
-            print(self.time, ' 总资金:', fa.cash(), '  持仓:', self.holding, '  ATR:', atr, '头寸规模:', self.posSize,'可用资金:',fa.available(),'保证金:',fa.margin())
+                self.posSize = int(self.cash() * self.stop_loss / (atr * self.ahand_num))
+            print(self.time, ' 总资金:', self.cash(), '  持仓:', self.holding, '  ATR:', atr, '头寸规模:', self.posSize, '可用资金:',
+                  self.available(), '保证金:', self.margin())
 
-            fa.refresh(self.security,
-                       self.__kline.loc[self.time, 'high'],
-                       self.__kline.loc[self.time, 'low'],
-                       self.__kline.loc[self.time, 'close'],
-                       self.time)
-            position = fa.get_position(self.security)
-            orderList = fa.order()
+            self.refresh(self.security,
+                         self.__kline.loc[self.time, 'high'],
+                         self.__kline.loc[self.time, 'low'],
+                         self.__kline.loc[self.time, 'close'],
+                         self.time)
+            position = self.get_position(self.security)
+            orderList = self.order()
             if position is not None:
                 # 海龟系统里记录的持仓数目与账户内不同，说明有新交易
                 if self.holding != position['holding']:
                     self.holding = position['holding']
                     self.side = position['side']
                     self.level = self.holding // self.posSize
-                    self.atr = self.__kline.loc[position['last_time'],'atr']
+                    self.atr = self.__kline.loc[position['last_time'], 'atr']
 
                     for orderItem in orderList[::-1]:
                         # 去掉反向挂单
                         if orderItem['security'] == self.security and orderItem['side'] != self.side:
-                            fa.del_order(orderItem)
+                            self.del_order(orderItem)
 
-
-                #删除止损单
+                # 删除止损单
                 for orderItem in orderList[::-1]:
                     # 删掉止损挂单
                     if orderItem['security'] == self.security and orderItem['side'] == 0:
-                        fa.del_order(orderItem)
+                        self.del_order(orderItem)
 
-                #设立止损单
+                # 设立止损单
                 if self.side > 0:
                     stop_price = max(self.__kline.loc[self.time, 'low10'],
                                      position['opening_price'] + (self.level - 1) * 0.25 * self.atr - 2 * self.atr
                                      )
                     stop_price = int(round(stop_price))
-                    fa.add_order(self.securityName, self.security, 0, stop_price, position['holding'], self.time)
+                    self.add_order(self.securityName, self.security, 0, stop_price, position['holding'], self.time)
                 elif self.side < 0:
                     stop_price = min(self.__kline.loc[self.time, 'high10'],
                                      position['opening_price'] - (self.level - 1) * 0.25 * self.atr + 2 * self.atr
                                      )
 
                     stop_price = int(round(stop_price))
-                    fa.add_order(self.securityName, self.security, 0, stop_price, position['holding'], self.time)
+                    self.add_order(self.securityName, self.security, 0, stop_price, position['holding'], self.time)
 
             elif self.side != 0:
                 # 清空仓位记录
@@ -171,63 +176,72 @@ class Turtle:
                 self.atr = 0
 
             if self.holding <= 0:
-                fa.clear_order()
-                #头寸规模 = 账户的1 % / (N * 每一点价值)
-                self.posSize = int(fa.cash() *self.stop_loss /(atr * self.ahand_num))*1
+                self.clear_order()
+                # 头寸规模 = 账户的1 % / (N * 每一点价值)
+                self.posSize = int(self.cash() * self.stop_loss / (atr * self.ahand_num)) * 1
 
                 for j in range(4):
-                    n = int(round(0.5 * atr * j,0))
-                    buy_price=int(buy_price)
-                    sell_price=int(sell_price)
-                    fa.add_order(self.securityName, self.security, 1, buy_price + n, self.posSize, self.time)
-                    fa.add_order(self.securityName, self.security, -1, sell_price - n, self.posSize, self.time)
+                    n = int(round(0.5 * atr * j, 0))
+                    buy_price = int(buy_price)
+                    sell_price = int(sell_price)
+                    self.add_order(self.securityName, self.security, 1, buy_price + n, self.posSize, self.time)
+                    self.add_order(self.securityName, self.security, -1, sell_price - n, self.posSize, self.time)
 
-        print('账户最大值:',self.__kline['cash'].max())
-        print('账户最小值:',self.__kline['cash'].min())
+        print('账户最大值:', self.__kline['cash'].max())
+        print('账户最小值:', self.__kline['cash'].min())
         print('期初账户:', money)
-        print('期末账户余额:', fa.cash())
-        self.__kline['cash']=self.__kline['cash']/money
-        self.__kline['cash'].plot(kind='line',title='资金曲线 %')
+        print('期末账户余额:', self.cash())
+        self.__kline['cash'] = self.__kline['cash'] / money
+        self.__kline['cash'].plot(kind='line', title='资金曲线')
         # self.__kline.index, self.__kline['cash'].values, label="总资金", color='blue')
         plt.show()
-        return fa
+        return
 
     def add_atr(self):
-        self.__kline['atr'] =round(talib.ATR(kline['high'], kline['low'], kline['close'], timeperiod=self.ATRTIME),0)
+        for securityName in self.__klineList.keys():
+            self.__klineList[securityName]['atr'] = round(talib.ATR(kline['high'], kline['low'], kline['close'], timeperiod=self.ATRTIME), 0)
 
     def add_top(self):
-        self.__kline['high20'] = self.__kline['high'].rolling(window=20).max()
-        self.__kline['high20'].fillna(value=pd.Series.cummax(self.__kline['high']),inplace=True)
-        self.__kline['high10'] = self.__kline['high'].rolling(window=10).max()
-        self.__kline['high10'].fillna(value=pd.Series.cummax(self.__kline['high']), inplace=True)
+        for securityName in self.__klineList.keys():
+            self.__klineList[securityName]['high20'] = self.__klineList[securityName]['high'].rolling(window=20).max()
+            self.__klineList[securityName]['high20'].fillna(value=pd.Series.cummax(self.__klineList[securityName]['high']), inplace=True)
+            self.__klineList[securityName]['high10'] = self.__klineList[securityName]['high'].rolling(window=10).max()
+            self.__klineList[securityName]['high10'].fillna(value=pd.Series.cummax(self.__klineList[securityName]['high']), inplace=True)
 
     def add_low(self):
-        self.__kline['low20'] = self.__kline['low'].rolling(window=20).min()
-        self.__kline['low20'].fillna(value=pd.Series.cummin(self.__kline['low']), inplace=True)
-        self.__kline['low10'] = self.__kline['low'].rolling(window=10).min()
-        self.__kline['low10'].fillna(value=pd.Series.cummin(self.__kline['low']), inplace=True)
-    def orderSign(self, orderTime=openTime):
+        for securityName in self.__klineList.keys():
+            self.__klineList[securityName]['low20'] = self.__klineList[securityName]['low'].rolling(window=20).min()
+            self.__klineList[securityName]['low20'].fillna(value=pd.Series.cummin(self.__klineList[securityName]['low']), inplace=True)
+            self.__klineList[securityName]['low10'] = self.__klineList[securityName]['low'].rolling(window=10).min()
+            self.__klineList[securityName]['low10'].fillna(value=pd.Series.cummin(self.__klineList[securityName]['low']), inplace=True)
 
-        buy = self.__kline.loc[orderTime]['high']
-        clo_buy = self.__kline.loc[orderTime]['high'] - 2 * self.__kline.loc[orderTime]['ATR']
+        # self.__kline['low20'] = self.__kline['low'].rolling(window=20).min()
+        # self.__kline['low20'].fillna(value=pd.Series.cummin(self.__kline['low']), inplace=True)
+        # self.__kline['low10'] = self.__kline['low'].rolling(window=10).min()
+        # self.__kline['low10'].fillna(value=pd.Series.cummin(self.__kline['low']), inplace=True)
 
-        sell = self.__kline.loc[orderTime]['low']
-
-
-
-
-# arr= talib.ATR(np.array([8,9,10]),np.array([5,6,1]),np.array([7,6,5]), timeperiod=3)
-# arr= np.array([1,23])
-# print(arr)
-
-kline = pd.read_csv('data/P8888.csv', index_col=0)
-kline= kline[['close', 'high', 'low']]
-# dels = [0, 4, 5]
-#
-# kline.drop(kline.columns[dels], axis=1, inplace=True)
-# # print(kline)
-turtle = Turtle(kline)
-a= turtle.run(100000)
-print(a.cash())
+    # def orderSign(self, orderTime=openTime):
+    #
+    #     buy = self.__kline.loc[orderTime]['high']
+    #     clo_buy = self.__kline.loc[orderTime]['high'] - 2 * self.__kline.loc[orderTime]['ATR']
+    #
+    #     sell = self.__kline.loc[orderTime]['low']
 
 
+# klineList = pd.DataFrame()
+# klineList['螺纹钢']=pd.DataFrame({'security':'RB8888'})
+klineList={
+    '螺纹钢':{'security':'RB8888'},
+    '棕榈油': {'security': 'P8888'},
+    '豆粕': {'security': 'M8888'},
+    'PTA': {'security': 'TA8888'}
+}
+
+for securityName in klineList.keys():
+    # print(('data/{}.csv'.format(securityList[securityName]['security'])))
+    kline = pd.read_csv('data/{}.csv'.format(klineList[securityName]['security']), index_col=0)
+    kline = kline[['close', 'high', 'low']]
+    klineList[securityName]['kline']=kline
+turtle = Turtle(klineList, 100000)
+
+# turtle.run()
