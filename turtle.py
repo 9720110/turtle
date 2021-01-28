@@ -74,8 +74,8 @@ class Turtle:
     ahand_num= 10  #当前品种每手数量
     stop_loss = 0.02 #每个头寸最大亏损
 
-    securityName = '棕榈油'   #
-    security = 'P8888'
+    securityName = '螺纹钢'   #
+    security = 'RB8888'
     ATRTIME = 20  # N=20
     __kline = pd.DataFrame()
     side = 0  # 1多 / -1空
@@ -220,7 +220,7 @@ class Turtle:
 # arr= np.array([1,23])
 # print(arr)
 
-kline = pd.read_csv('data/P8888.csv', index_col=0)
+kline = pd.read_csv('data/RB8888.csv', index_col=0)
 kline= kline[['close', 'high', 'low']]
 # dels = [0, 4, 5]
 #
