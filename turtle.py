@@ -107,12 +107,12 @@ class Turtle:
     def run(self,money):
         fa = futures.Account(money)
         self.__kline['cash']=money
-        for i in range(2674):
+        for i in self.__kline.values:
+            self.next_time()
             self.__kline.loc[self.time,'cash']=fa.cash()
             buy_price = self.__kline.loc[self.time, 'high20']
             sell_price = self.__kline.loc[self.time, 'low20']
             atr = self.__kline.loc[self.time, 'atr']  #保存昨天的ATR
-            self.next_time()
 
             if np.isnan(atr):
                 continue
@@ -126,7 +126,7 @@ class Turtle:
                        self.__kline.loc[self.time, 'close'],
                        self.time)
             position = fa.get_position(self.security)
-            orderList = fa.order()
+            orderList = fa.get_order()
             if position is not None:
                 # 海龟系统里记录的持仓数目与账户内不同，说明有新交易
                 if self.holding != position['holding']:
@@ -173,7 +173,7 @@ class Turtle:
             if self.holding <= 0:
                 fa.clear_order()
                 #头寸规模 = 账户的1 % / (N * 每一点价值)
-                self.posSize = int(fa.cash() *self.stop_loss /(atr * self.ahand_num))*1
+                self.posSize = int(fa.cash() *self.stop_loss /(atr * self.ahand_num))
 
                 for j in range(4):
                     n = int(round(0.5 * atr * j,0))

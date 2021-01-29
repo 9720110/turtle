@@ -74,11 +74,12 @@ M8888.XDCE
 
 class Turtle(Account):
     # ahand_num = 10  # 当前品种每手数量
-    stop_loss = 0.02  # 每个头寸最大亏损
-
+    stop_loss = 0.01  # 每个头寸最大亏损
+    # MAX_POS =
     # securityName = '棕榈油'  #
     # security = 'P8888'
     ATRTIME = 20  # N=20
+    A_POS_COUNT=3
     __klineList = pd.DataFrame()
     # __kline = pd.DataFrame()
     # side = 0  # 1多 / -1空
@@ -147,11 +148,13 @@ class Turtle(Account):
         for i in self.__klineList[0][1]['kline'].values:
             self.next_time()
             for k in klineList:
+                if self.cash()<0:
+                    print('kuiwan')
                 money.loc[self.time, 'cash'] = self.cash()  # 记录当日总资金
                 buy_price = k[1]['kline'].loc[self.time, 'high20']
                 sell_price = k[1]['kline'].loc[self.time, 'low20']
 
-                atr = k[1]['kline'].loc[self.time, 'atr']  # 保存ATR
+                atr = k[1]['kline'].loc[self.time, 'atr']  # 暂时记录当日该品种的ATR
 
                 if np.isnan(atr):
                     continue
@@ -166,18 +169,18 @@ class Turtle(Account):
                              k[1]['kline'].loc[self.time, 'close'],
                              self.time)
                 position = self.get_position(k[1]['security'])
-                orderList = self.order()
+                orderList = self.get_order()
                 if position is not None:
                     # 海龟系统里记录的持仓数目与账户内不同，说明有新交易
                     if k[1]['holding'] != position['holding']:
                         k[1]['holding'] = position['holding']
                         k[1]['side'] = position['side']
                         k[1]['level'] = k[1]['holding'] // k[1]['posSize']
-                        self.atr = k[1]['kline'].loc[position['last_time'], 'atr']
+                        k[1]['atr'] = k[1]['kline'].loc[position['last_time'], 'atr']
 
                         for orderItem in orderList[::-1]:
                             # 去掉反向挂单
-                            if orderItem['security'] == k[1]['security'] and orderItem['side'] != self.side:
+                            if orderItem['security'] == k[1]['security'] and orderItem['side'] != k[1]['side']:
                                 self.del_order(orderItem)
 
                     # 删除止损单
@@ -187,43 +190,47 @@ class Turtle(Account):
                             self.del_order(orderItem)
 
                     # 设立止损单
-                    if self.side > 0:
+                    if k[1]['side'] > 0:
                         stop_price = max(k[1]['kline'].loc[self.time, 'low10'],
-                                         position['opening_price'] + (self.level - 1) * 0.25 * self.atr - 2 * self.atr
+                                         position['opening_price'] + (k[1]['level'] - 1) * 0.25 * k[1]['atr'] - 2 * k[1]['atr']
                                          )
                         stop_price = int(round(stop_price))
                         self.add_order(k[0], k[1]['security'], 0, stop_price, position['holding'], self.time)
-                    elif self.side < 0:
+                    elif k[1]['side'] < 0:
                         stop_price = min(k[1]['kline'].loc[self.time, 'high10'],
-                                         position['opening_price'] - (self.level - 1) * 0.25 * self.atr + 2 * self.atr
+                                         position['opening_price'] - (k[1]['level'] - 1) * 0.25 * k[1]['atr'] + 2 * k[1]['atr']
                                          )
+
+
+
 
                         stop_price = int(round(stop_price))
                         self.add_order(k[0], k[1]['security'], 0, stop_price, position['holding'], self.time)
 
                 elif k[1]['side'] != 0:
                     # 清空仓位记录
-                    self.side = 0
-                    self.holding = 0  # 记录总共持有多少手
-                    self.level = 0  # 记录第几个头寸 0表示空仓
-                    self.openTime = ''  # 开仓日期
-                    self.atr = 0
+                    k[1]['side'] = 0
+                    k[1]['holding'] = 0  # 记录总共持有多少手
+                    k[1]['level'] = 0  # 记录第几个头寸 0表示空仓
+                    k[1]['openTime'] = ''  # 开仓日期
+                    k[1]['atr'] = 0
 
-                if self.holding <= 0:
-                    self.clear_order()
+                if k[1]['holding'] <= 0:
+
+                    self.clear_order(k[1]['security'])
                     # 头寸规模 = 账户的1 % / (N * 每一点价值)
-                    self.posSize = int(self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit'])) * 1
-
-                    for j in range(4):
+                    k[1]['posSize'] = int(self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
+                    print(self.time, ' 总资金:', self.cash(), 'ATR:', atr, '头寸规模:', k[1]['posSize'])
+                    for j in range(self.A_POS_COUNT):
                         n = int(round(0.5 * atr * j, 0))
                         buy_price = int(buy_price)
                         sell_price = int(sell_price)
-                        self.add_order(k[0], k[1]['security'], 1, buy_price + n, self.posSize, self.time)
-                        self.add_order(k[0], k[1]['security'], -1, sell_price - n, self.posSize, self.time)
+                        self.add_order(k[0], k[1]['security'], 1, buy_price + n, k[1]['posSize'], self.time)
+                        self.add_order(k[0], k[1]['security'], -1, sell_price - n, k[1]['posSize'], self.time)
 
         print('账户最大值:', money['cash'].max())
         print('账户最小值:', money['cash'].min())
-        print('期初账户:', money)
+        print('期初账户:', money['cash'].values[0])
         print('期末账户余额:', self.cash())
         money['cash'] = money['cash'] / money['cash'][0]
         money['cash'].plot(kind='line', title='资金曲线')
@@ -272,10 +279,10 @@ class Turtle(Account):
 # klineList = pd.DataFrame()
 # klineList['螺纹钢']=pd.DataFrame({'security':'RB8888'})
 klineList = [
-    ['螺纹钢', {'security': 'RB8888'}]
-    # ['棕榈油', {'security': 'P8888'}],
-    # ['豆粕', {'security': 'M8888'}],
-    # ['PTA', {'security': 'TA8888'}]
+    ['螺纹钢', {'security': 'RB8888'}],
+     ['棕榈油', {'security': 'P8888'}],
+     ['豆粕', {'security': 'M8888'}],
+     ['PTA', {'security': 'TA8888'}]
 ]
 # print(klineList)
 # klineList=pd.DataFrame(klineList)

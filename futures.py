@@ -68,9 +68,9 @@ class Account:
         totalMargin = 0
         for position in self.__positionItem.values():
             totalMargin += position['margin']
-        self.__margin = totalMargin
+        self.__margin = round(totalMargin,2)
 
-        return totalMargin
+        return self.__margin
 
     def position(self):
         '''返回持仓'''
@@ -80,12 +80,17 @@ class Account:
         '''返回浮盈'''
         return self.__profit
 
-    def order(self):
+    def get_order(self):
         '''返回挂单'''
         return self.__orderList
 
-    def clear_order(self):
-        self.__orderList.clear()
+    def clear_order(self,security=None):
+        if security is None:
+            self.__orderList.clear()
+        else:
+            for orderItem in self.__orderList[::-1]:
+                if orderItem['security']==security:
+                    self.__orderList.remove(orderItem)
 
     def _margin_cal(self, position):
         info = SECURITY_INFO[position['securityName']]
