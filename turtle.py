@@ -73,7 +73,7 @@ M8888.XDCE
 class Turtle:
     ahand_num= 10  #当前品种每手数量
     stop_loss = 0.02 #每个头寸最大亏损
-
+    A_POS_COUNT =3
     securityName = '螺纹钢'   #
     security = 'RB8888'
     ATRTIME = 20  # N=20
@@ -175,7 +175,7 @@ class Turtle:
                 #头寸规模 = 账户的1 % / (N * 每一点价值)
                 self.posSize = int(fa.cash() *self.stop_loss /(atr * self.ahand_num))
 
-                for j in range(4):
+                for j in range(self.A_POS_COUNT):
                     n = int(round(0.5 * atr * j,0))
                     buy_price=int(buy_price)
                     sell_price=int(sell_price)

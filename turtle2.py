@@ -1,13 +1,13 @@
 import pandas as pd
 import talib
 import numpy as np
-import futures
+import os
 import matplotlib.pyplot as plt
+
 from futures import Account
 
 from pylab import mpl
 from futures import SECURITY_INFO
-
 
 mpl.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 指定默认字体：解决plot不能显示中文问题
 mpl.rcParams['axes.unicode_minus'] = False  # 解决保存图像是负号'-'显示为方块的问题
@@ -75,11 +75,11 @@ M8888.XDCE
 class Turtle(Account):
     # ahand_num = 10  # 当前品种每手数量
     stop_loss = 0.01  # 每个头寸最大亏损
-    # MAX_POS =
+    # MAX_POS = 12
     # securityName = '棕榈油'  #
     # security = 'P8888'
     ATRTIME = 20  # N=20
-    A_POS_COUNT=3
+    A_POS_COUNT = 3
     __klineList = pd.DataFrame()
     # __kline = pd.DataFrame()
     # side = 0  # 1多 / -1空
@@ -102,12 +102,12 @@ class Turtle(Account):
         # self.add_top()
         # self.add_low()
         for k in self.__klineList:
-            #加入atr
+            # 加入atr
             k[1]['kline']['atr'] = round(
                 talib.ATR(k[1]['kline']['high'], k[1]['kline']['low'], k[1]['kline']['close'], timeperiod=self.ATRTIME),
                 0)
 
-            #加入20日高点，10日高点
+            # 加入20日高点，10日高点
             k[1]['kline']['high20'] = k[1]['kline']['high'].rolling(window=20).max()
             k[1]['kline']['high20'].fillna(
                 value=pd.Series.cummax(k[1]['kline']['high']), inplace=True)
@@ -115,15 +115,13 @@ class Turtle(Account):
             k[1]['kline']['high10'].fillna(
                 value=pd.Series.cummax(k[1]['kline']['high']), inplace=True)
 
-
-            #加入20日低点，10日低点
+            # 加入20日低点，10日低点
             k[1]['kline']['low20'] = k[1]['kline']['low'].rolling(window=20).min()
             k[1]['kline']['low20'].fillna(
                 value=pd.Series.cummin(k[1]['kline']['low']), inplace=True)
             k[1]['kline']['low10'] = k[1]['kline']['low'].rolling(window=10).min()
             k[1]['kline']['low10'].fillna(
                 value=pd.Series.cummin(k[1]['kline']['low']), inplace=True)
-
 
             k[1]['posSize'] = 0  # 记录该品种头寸规模，即每次开仓手数
             k[1]['holding'] = 0  # 记录该品种总共持有多少手
@@ -148,8 +146,9 @@ class Turtle(Account):
         for i in self.__klineList[0][1]['kline'].values:
             self.next_time()
             for k in klineList:
-                if self.cash()<0:
-                    print('kuiwan')
+                if self.cash() < 0:
+                    print(k[1]['securityName'],'亏完')
+                    return money
                 money.loc[self.time, 'cash'] = self.cash()  # 记录当日总资金
                 buy_price = k[1]['kline'].loc[self.time, 'high20']
                 sell_price = k[1]['kline'].loc[self.time, 'low20']
@@ -160,8 +159,9 @@ class Turtle(Account):
                     continue
                 if k[1]['posSize'] == 0:
                     k[1]['posSize'] = int(self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
-                print(self.time, ' 总资金:', self.cash(), k[0]+'持仓:', k[1]['holding'], '  ATR:', atr, '头寸规模:', k[1]['posSize'],
-                      '可用资金:', self.available(), '保证金:', self.margin())
+                # print(self.time, ' 总资金:', self.cash(), k[0] + '持仓:', k[1]['holding'], '  ATR:', atr, '头寸规模:',
+                #       k[1]['posSize'],
+                #       '可用资金:', self.available(), '保证金:', self.margin())
 
                 self.refresh(k[1]['security'],
                              k[1]['kline'].loc[self.time, 'high'],
@@ -192,17 +192,16 @@ class Turtle(Account):
                     # 设立止损单
                     if k[1]['side'] > 0:
                         stop_price = max(k[1]['kline'].loc[self.time, 'low10'],
-                                         position['opening_price'] + (k[1]['level'] - 1) * 0.25 * k[1]['atr'] - 2 * k[1]['atr']
+                                         position['opening_price'] + (k[1]['level'] - 1) * 0.25 * k[1]['atr'] - 2 *
+                                         k[1]['atr']
                                          )
                         stop_price = int(round(stop_price))
                         self.add_order(k[0], k[1]['security'], 0, stop_price, position['holding'], self.time)
                     elif k[1]['side'] < 0:
                         stop_price = min(k[1]['kline'].loc[self.time, 'high10'],
-                                         position['opening_price'] - (k[1]['level'] - 1) * 0.25 * k[1]['atr'] + 2 * k[1]['atr']
+                                         position['opening_price'] - (k[1]['level'] - 1) * 0.25 * k[1]['atr'] + 2 *
+                                         k[1]['atr']
                                          )
-
-
-
 
                         stop_price = int(round(stop_price))
                         self.add_order(k[0], k[1]['security'], 0, stop_price, position['holding'], self.time)
@@ -220,23 +219,23 @@ class Turtle(Account):
                     self.clear_order(k[1]['security'])
                     # 头寸规模 = 账户的1 % / (N * 每一点价值)
                     k[1]['posSize'] = int(self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
-                    print(self.time, ' 总资金:', self.cash(), 'ATR:', atr, '头寸规模:', k[1]['posSize'])
-                    for j in range(self.A_POS_COUNT):
-                        n = int(round(0.5 * atr * j, 0))
-                        buy_price = int(buy_price)
-                        sell_price = int(sell_price)
-                        self.add_order(k[0], k[1]['security'], 1, buy_price + n, k[1]['posSize'], self.time)
-                        self.add_order(k[0], k[1]['security'], -1, sell_price - n, k[1]['posSize'], self.time)
-
-        print('账户最大值:', money['cash'].max())
-        print('账户最小值:', money['cash'].min())
-        print('期初账户:', money['cash'].values[0])
-        print('期末账户余额:', self.cash())
-        money['cash'] = money['cash'] / money['cash'][0]
-        money['cash'].plot(kind='line', title='资金曲线')
-        # self.__kline.index, self.__kline['cash'].values, label="总资金", color='blue')
-        plt.show()
-        return
+                    # print(self.time, ' 总资金:', self.cash(), 'ATR:', atr, '头寸规模:', k[1]['posSize'])
+                    if k[1]['posSize'] > 0:
+                        for j in range(self.A_POS_COUNT):
+                            n = int(round(0.5 * atr * j, 0))
+                            buy_price = int(buy_price)
+                            sell_price = int(sell_price)
+                            self.add_order(k[0], k[1]['security'], 1, buy_price + n, k[1]['posSize'], self.time)
+                            self.add_order(k[0], k[1]['security'], -1, sell_price - n, k[1]['posSize'], self.time)
+        #
+        # print('账户最大值:', money['cash'].max())
+        # print('账户最小值:', money['cash'].min())
+        # print('期初账户:', money['cash'].values[0])
+        # print('期末账户余额:', self.cash())
+        # money['cash'] = money['cash'] / money['cash'][0]
+        # money['cash'].plot(kind='line', title='资金曲线')
+        # plt.show()
+        return money
 
     # def add_atr(self):
     #
@@ -278,21 +277,32 @@ class Turtle(Account):
 
 # klineList = pd.DataFrame()
 # klineList['螺纹钢']=pd.DataFrame({'security':'RB8888'})
-klineList = [
-    ['螺纹钢', {'security': 'RB8888'}],
-     ['棕榈油', {'security': 'P8888'}],
-     ['豆粕', {'security': 'M8888'}],
-     ['PTA', {'security': 'TA8888'}]
-]
+# klineList = [
+#     ['螺纹钢', {'security': 'RB8888'}],
+#     ['棕榈油', {'security': 'P8888'}],
+#     ['豆粕', {'security': 'M8888'}],
+#     ['PTA', {'security': 'TA8888'}]
+# ]
 # print(klineList)
 # klineList=pd.DataFrame(klineList)
-
-for k in klineList:
-    kline = pd.read_csv('data/{}.csv'.format(k[1]['security']), index_col=0)
+klineList = []
+# for info_key in SECURITY_INFO.keys():
+    # klineList = []
+info_key='螺纹钢'
+file = 'data/{}.csv'.format(SECURITY_INFO[info_key]['jc'] + '8888')
+if os.path.exists(file):
+    klineList.append([info_key, {'security': SECURITY_INFO[info_key]['jc'] + '8888'}])
+    kline = pd.read_csv(file, index_col=0)
     kline = kline[['close', 'high', 'low']]
-    k[1]['kline'] = kline
+    klineList[len(klineList) - 1][1]['kline'] = kline
+    turtle = Turtle(klineList, 100000)
+    money = turtle.run()
+    print(info_key, '账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
+          money['cash'].values[-1])
+    # print(money)
+    # print(info_key)
 
-# print(klineList[0][1]['kline'])
-turtle = Turtle(klineList, 100000)
-
-turtle.run()
+# print('账户最大值:', money['cash'].max())
+# print('账户最小值:', money['cash'].min())
+# print('期初账户:', money['cash'].values[0])
+# print('期末账户余额:', self.cash())
