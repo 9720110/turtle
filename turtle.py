@@ -71,11 +71,11 @@ M8888.XDCE
 
 
 class Turtle:
-    ahand_num= 10  #当前品种每手数量
-    stop_loss = 0.02 #每个头寸最大亏损
-    A_POS_COUNT =3
-    securityName = '螺纹钢'   #
-    security = 'RB8888'
+    ahand_num= 5  #当前品种每手数量
+    stop_loss = 0.01 #每个头寸最大亏损
+    A_POS_COUNT =4
+    securityName = '棉花'   #
+    security = 'HC8888'
     ATRTIME = 20  # N=20
     __kline = pd.DataFrame()
     side = 0  # 1多 / -1空
@@ -113,7 +113,8 @@ class Turtle:
             buy_price = self.__kline.loc[self.time, 'high20']
             sell_price = self.__kline.loc[self.time, 'low20']
             atr = self.__kline.loc[self.time, 'atr']  #保存昨天的ATR
-
+            if self.time == '2013-08-27':
+                print('im in ')
             if np.isnan(atr):
                 continue
             if self.posSize == 0:
@@ -174,13 +175,13 @@ class Turtle:
                 fa.clear_order()
                 #头寸规模 = 账户的1 % / (N * 每一点价值)
                 self.posSize = int(fa.cash() *self.stop_loss /(atr * self.ahand_num))
-
-                for j in range(self.A_POS_COUNT):
-                    n = int(round(0.5 * atr * j,0))
-                    buy_price=int(buy_price)
-                    sell_price=int(sell_price)
-                    fa.add_order(self.securityName, self.security, 1, buy_price + n, self.posSize, self.time)
-                    fa.add_order(self.securityName, self.security, -1, sell_price - n, self.posSize, self.time)
+                if self.posSize>0:
+                    for j in range(self.A_POS_COUNT):
+                        n = int(round(0.5 * atr * j,0))
+                        buy_price=int(buy_price)
+                        sell_price=int(sell_price)
+                        fa.add_order(self.securityName, self.security, 1, buy_price + n, self.posSize, self.time)
+                        fa.add_order(self.securityName, self.security, -1, sell_price - n, self.posSize, self.time)
 
         print('账户最大值:',self.__kline['cash'].max())
         print('账户最小值:',self.__kline['cash'].min())
@@ -220,7 +221,7 @@ class Turtle:
 # arr= np.array([1,23])
 # print(arr)
 
-kline = pd.read_csv('data/RB8888.csv', index_col=0)
+kline = pd.read_csv('data/CF8888.csv', index_col=0)
 kline= kline[['close', 'high', 'low']]
 # dels = [0, 4, 5]
 #

@@ -88,9 +88,16 @@ class Account:
     __margin = 0  # 全部持仓保证金
     __positionItem = {}  # 持仓 {'security品种代码RB1605' : {'品种名字 螺纹钢','side开仓方向 1多/-1空' , holding持仓手数 , open_price开仓价格 , new_price现价 , margin保证金}}
     __orderList = []  # 挂单列表[OrderItem()]  包括止损和加仓  ['security品种代码RB1605' , 'side 1开多/-1开空/0平仓' , amount交易手数 , price交易价格]
-    max_margin=100  #最大保证金比例
+    max_margin = 100  # 最大保证金比例
+
     def __init__(self, initCash):
         self.__cash = initCash
+        self.__profit = 0  # 持仓浮盈/亏
+        self.__available = 0  # 可用资金
+        self.__margin = 0  # 全部持仓保证金
+        self.__positionItem = {}  # 持仓 {'security品种代码RB1605' : {'品种名字 螺纹钢','side开仓方向 1多/-1空' , holding持仓手数 , open_price开仓价格 , new_price现价 , margin保证金}}
+        self.__orderList = []  # 挂单列表[OrderItem()]  包括止损和加仓  ['security品种代码RB1605' , 'side 1开多/-1开空/0平仓' , amount交易手数 , price交易价格]
+        self.max_margin = 100  # 最大保证金比例
 
     def _ref(self):
         # 内部刷新
@@ -177,6 +184,7 @@ class Account:
         self.__profit = round(profit, 2)
 
     def refresh(self, security='', high=-1, low=-1, close=-1, reftime=''):
+        result = None
         # 遍历挂单列表比对各项参数，符合要求则交易
         self._ref()
         cash = self.__cash
@@ -184,16 +192,31 @@ class Account:
         if security == '':
             return
         orderList = self.__orderList
+
+        # 第一个for循环，先成交开仓挂单
         for orderItem in orderList[:]:
-            if orderItem['security'] != security:
-                # 不是该品种
-                continue
-            elif orderItem['price'] > high or orderItem['price'] < low:
-                # 挂单价格不在此价格区间内，无法成交
-                continue
-            else:
-                # 符合要求，成交,获得成交信息,用于返回
-                self.deal(orderItem)
+            if orderItem['security'] == security:
+                if orderItem['side'] != 0:
+                    if (low <= orderItem['price']) and (orderItem['price'] <= high):
+                        # 符合要求，成交,获得成交信息,用于返回
+                        result = self.deal(orderItem)
+                        for o in orderList[:]:
+                            if (o['security'] == security) and (o['side'] == 0):
+                                o['amount'] += orderItem['amount']
+
+        # 第二个for循环，成交平仓挂单
+        for orderItem in orderList[:]:
+            if orderItem['security'] == security:
+                if orderItem['side'] == 0:
+                    if (low < orderItem['price']) and (orderItem['price'] < high):
+                        result = self.deal(orderItem)
+                    elif (self.get_position(security)['side'] > 0) and (orderItem['price'] > high):
+                        orderItem['price'] = close
+                        result = self.deal(orderItem)  # 持有多单的时候，跳空低开，挂单止损价格比最高价还高，无法正常止损，则以收盘价止损
+                    elif (self.get_position(security)['side'] < 0) and (orderItem['price'] < low):
+
+                        orderItem['price'] = close
+                        result = self.deal(orderItem)  # 持有空单的时候，跳空高开，挂单止损价格比最低价还低，无法正常止损，则以收盘价止损
 
         # 如果输入的是已持仓品种，则刷新持仓的各项属性
         if security in self.__positionItem.keys():
@@ -208,6 +231,8 @@ class Account:
 
             self._ref()
 
+        return result
+
     def deal(self, orderItem):
         # 交易函数
         # security 品种代码
@@ -217,109 +242,107 @@ class Account:
         # 2更改挂单列表
         # 3更改账户各项属性
         # try:
-            info = SECURITY_INFO[orderItem['securityName']]
-            if orderItem['side'] != 0:  # 如果不是平仓操作
-                margin = orderItem['price'] * orderItem['amount'] * info['margin_rate'] * info[
-                    'trading_unit']  # 本次交易需要的保证金
-                if (self.__available > margin)and((margin+self.__margin)/self.cash() <=self.max_margin):  # 如果可用资金大于所需保证金 则成交
-                    # 如果已有持仓
-                    if orderItem['security'] in self.__positionItem.keys():
-                        position = self.__positionItem[orderItem['security']]
-                        # print('$',position)
-                        if position['side'] != orderItem['side']:
-                            raise Exception('已有反向持仓，无法交易')
-                        # 临时保存交易后的总手数
-                        temp = position['holding'] + orderItem['amount']
-                        # 计算交易后的平均开仓价格
-                        position['opening_price'] = round((position['opening_price'] * position['holding'] + orderItem[
-                            'price'] * orderItem['amount']) / temp, 2)
-                        position['holding'] = temp
-                        position['current_price'] = orderItem['price']
-                        position['margin'] = self._margin_cal(position)
-                        self.__positionItem[orderItem['security']] = position
-                        # print('加仓:', orderItem['security'], position['side'], orderItem['amount'],
-                        #       orderItem['price'])
-                        self.del_order(orderItem)
-                        self._ref()
-                    else:
-                        # 如果是新开仓
-                        position = dict(
-                            securityName=orderItem['securityName'],
-                            side=orderItem['side'],
-                            holding=orderItem['amount'],
-                            opening_price=orderItem['price'],
-                            current_price=orderItem['price'],
-                            margin=0,
-                            last_time=orderItem['time']
-                        )
-                        position['margin'] = self._margin_cal(position)
-                        self._add_position(orderItem['security'], position)
-                        # print('新开仓:', orderItem['security'], position['side'], position['holding'],
-                        #       position['opening_price'])
-                        self.del_order(orderItem)
-                        self._ref()
-                        # logging.info('新开仓 : ', position[''])
-
-
-                else:
-                    # 可用资金不足，返回None
-                    return None
-            else:
-                # 如果是平仓交易
-                if orderItem['security'] not in self.__positionItem.keys():
-                    raise Exception('没有持有该合约，无法平仓')
-                elif orderItem['amount'] > self.__positionItem[orderItem['security']]['holding']:
-                    raise Exception('平仓手数大于持仓手数，无法平仓')
-
-                # 取出一条持仓信息 key=即将交易的品种
-                position = self.__positionItem[orderItem['security']]
-
-                # 修改这条持仓信息的当前价格为交易价格
-                position['current_price'] = orderItem['price']
-
-                # 计算保证金
-                position['margin'] = self._margin_cal(position)
-
-                # 将修改好的持仓信息赋值回去
-                self.__positionItem[orderItem['security']] = position
-
-                # 刷新
-                self._ref()
-
-                # 计算价差 spread
-                spread = (position['current_price'] - position['opening_price']) * position['side']
-                # print(position['current_price'])
-                # print(position['opening_price'])
-                # print(position['side'])
-                # print(spread)
-                # #总资产=总资产 - 平仓部分浮盈 + 平仓收益
-                # self.__cash = round(self.__cash -  + spread * orderItem['amount'], 2)
-
-                # 把交易部分的浮盈去掉，并赋值给总浮盈
-                # print(self.profit())
-                self.__profit = round(self.__profit - spread * orderItem['amount'] * info['trading_unit'], 2)
-                # print(self.profit())
-                if position['holding'] <= orderItem['amount']:
-                    self._del_position(orderItem['security'])
-                else:
-                    temp = position['holding'] - orderItem['amount']
-                    position['opening_price'] = round((position['opening_price'] * position['holding'] - orderItem[
+        result = None
+        info = SECURITY_INFO[orderItem['securityName']]
+        if orderItem['side'] != 0:  # 如果不是平仓操作
+            margin = orderItem['price'] * orderItem['amount'] * info['margin_rate'] * info[
+                'trading_unit']  # 本次交易需要的保证金
+            if (self.__available > margin) and (
+                    (margin + self.__margin) / self.cash() <= self.max_margin):  # 如果可用资金大于所需保证金 则成交
+                # 如果已有持仓
+                if orderItem['security'] in self.__positionItem.keys():
+                    position = self.__positionItem[orderItem['security']]
+                    # print('$',position)
+                    if position['side'] != orderItem['side']:
+                        raise Exception('已有反向持仓，无法交易')
+                    # 临时保存交易后的总手数
+                    temp = position['holding'] + orderItem['amount']
+                    # 计算交易后的平均开仓价格
+                    position['opening_price'] = round((position['opening_price'] * position['holding'] + orderItem[
                         'price'] * orderItem['amount']) / temp, 2)
                     position['holding'] = temp
+                    position['current_price'] = orderItem['price']
                     position['margin'] = self._margin_cal(position)
                     self.__positionItem[orderItem['security']] = position
-                # print('平仓:', orderItem['security'], orderItem['side'], orderItem['amount'],
-                #       orderItem['price'])
-                self.del_order(orderItem)
-                self._ref()
-                # print(self.profit())
-                # self.del_order(orderItem)
+                    # print('加仓:', orderItem['security'], position['side'], orderItem['amount'],
+                    #       orderItem['price'])
+                    self.del_order(orderItem)
+                    self._ref()
+                else:
+                    # 如果是新开仓
+                    position = dict(
+                        securityName=orderItem['securityName'],
+                        side=orderItem['side'],
+                        holding=orderItem['amount'],
+                        opening_price=orderItem['price'],
+                        current_price=orderItem['price'],
+                        margin=0,
+                        last_time=orderItem['time']
+                    )
+                    position['margin'] = self._margin_cal(position)
+                    self._add_position(orderItem['security'], position)
+                    # print('新开仓:', orderItem['security'], position['side'], position['holding'],
+                    #       position['opening_price'])
+                    self.del_order(orderItem)
+                    self._ref()
+                    # logging.info('新开仓 : ', position[''])
 
 
+            else:
+                # 可用资金不足，返回None
+                return None
+        else:
 
-        # except Exception as e:
-        #     print('deal出现异常', e)
-        #     print()
+            # 如果是平仓交易
+            if orderItem['security'] not in self.__positionItem.keys():
+                raise Exception('没有持有该合约，无法平仓')
+            elif orderItem['amount'] > self.__positionItem[orderItem['security']]['holding']:
+                raise Exception('平仓手数大于持仓手数，无法平仓')
+            # 取出一条持仓信息 key=即将交易的品种
+            position = self.__positionItem[orderItem['security']]
+
+            # 修改这条持仓信息的当前价格为交易价格
+            position['current_price'] = orderItem['price']
+
+            # 计算保证金
+            position['margin'] = self._margin_cal(position)
+
+            # 将修改好的持仓信息赋值回去
+            self.__positionItem[orderItem['security']] = position
+
+            # 刷新
+            self._ref()
+
+            # 计算价差 spread
+            spread = (position['current_price'] - position['opening_price']) * position['side']
+            # print(position['current_price'])
+            # print(position['opening_price'])
+            # print(position['side'])
+            # print(spread)
+            # #总资产=总资产 - 平仓部分浮盈 + 平仓收益
+            # self.__cash = round(self.__cash -  + spread * orderItem['amount'], 2)
+
+            # 把交易部分的浮盈去掉，并赋值给总浮盈
+            # print(self.profit())
+            self.__profit = round(self.__profit - spread * orderItem['amount'] * info['trading_unit'], 2)
+            result = round(spread * orderItem['amount'] * info['trading_unit'], 2)
+            # print(self.profit())
+            if position['holding'] <= orderItem['amount']:
+                self._del_position(orderItem['security'])
+            else:
+                temp = position['holding'] - orderItem['amount']
+                position['opening_price'] = round((position['opening_price'] * position['holding'] - orderItem[
+                    'price'] * orderItem['amount']) / temp, 2)
+                position['holding'] = temp
+                position['margin'] = self._margin_cal(position)
+                self.__positionItem[orderItem['security']] = position
+            # print('平仓:', orderItem['security'], orderItem['side'], orderItem['amount'],
+            #       orderItem['price'])
+            self.del_order(orderItem)
+            self._ref()
+            # print(self.profit())
+            # self.del_order(orderItem)
+        return result
 
     def del_order(self, orderItem):
         self.__orderList.remove(orderItem)
@@ -336,7 +359,8 @@ class Account:
                 time=time
             )
             # orderItem = pd.Series(orderItem)
-
+            if time == '2014-04-24':
+                print('here')
             if (security not in self.__positionItem.keys()) and side == 0:
                 logging.error('下单错误，没有持有该合约')
                 # raise Exception('下单错误，没有持有该合约')

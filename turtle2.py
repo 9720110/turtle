@@ -79,7 +79,7 @@ class Turtle(Account):
     # securityName = '棕榈油'  #
     # security = 'P8888'
     ATRTIME = 20  # N=20
-    A_POS_COUNT = 3
+    A_POS_COUNT = 4
     __klineList = pd.DataFrame()
     # __kline = pd.DataFrame()
     # side = 0  # 1多 / -1空
@@ -128,6 +128,10 @@ class Turtle(Account):
             k[1]['level'] = 0  # 记录该品种第几个头寸 0表示空仓
             k[1]['openTime'] = ''  # 记录该品种开仓日期
             k[1]['side'] = ''  # 1多 / -1空
+            k[1]['count_loss'] = 0  # 止损次数
+            k[1]['count_win'] = 0  # 盈利次数
+            k[1]['loss'] = 0  # 止损了几个ATR
+            k[1]['win'] = 0  # 盈利了几个ATR
 
     def next_time(self):
         self.timeIndex += 1
@@ -147,7 +151,7 @@ class Turtle(Account):
             self.next_time()
             for k in klineList:
                 if self.cash() < 0:
-                    print(k[1]['securityName'],'亏完')
+                    print(k[0], '亏完')
                     return money
                 money.loc[self.time, 'cash'] = self.cash()  # 记录当日总资金
                 buy_price = k[1]['kline'].loc[self.time, 'high20']
@@ -163,17 +167,28 @@ class Turtle(Account):
                 #       k[1]['posSize'],
                 #       '可用资金:', self.available(), '保证金:', self.margin())
 
-                self.refresh(k[1]['security'],
-                             k[1]['kline'].loc[self.time, 'high'],
-                             k[1]['kline'].loc[self.time, 'low'],
-                             k[1]['kline'].loc[self.time, 'close'],
-                             self.time)
+                profit = self.refresh(k[1]['security'],
+                                      k[1]['kline'].loc[self.time, 'high'],
+                                      k[1]['kline'].loc[self.time, 'low'],
+                                      k[1]['kline'].loc[self.time, 'close'],
+                                      self.time)
+                if profit is not None:
+                    if profit > 0:
+                        k[1]['count_win'] += 1  # 盈利次数
+                        k[1]['win'] += round(profit / (k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 盈利了几个ATR
+                        print(k[0], '盈利', k[1]['win'], 'N')
+                    elif profit < 0:
+                        k[1]['count_loss'] += 1  # 止损次数
+                        k[1]['loss'] += round(profit / (k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 止损了几个ATR
+                        print(k[0], '止损', k[1]['loss'], 'N')
+
                 position = self.get_position(k[1]['security'])
                 orderList = self.get_order()
                 if position is not None:
                     # 海龟系统里记录的持仓数目与账户内不同，说明有新交易
                     if k[1]['holding'] != position['holding']:
                         k[1]['holding'] = position['holding']
+                        # print(k[1]['holding'])
                         k[1]['side'] = position['side']
                         k[1]['level'] = k[1]['holding'] // k[1]['posSize']
                         k[1]['atr'] = k[1]['kline'].loc[position['last_time'], 'atr']
@@ -190,6 +205,8 @@ class Turtle(Account):
                             self.del_order(orderItem)
 
                     # 设立止损单
+                    if self.time == '2014-04-24':
+                        print('im in')
                     if k[1]['side'] > 0:
                         stop_price = max(k[1]['kline'].loc[self.time, 'low10'],
                                          position['opening_price'] + (k[1]['level'] - 1) * 0.25 * k[1]['atr'] - 2 *
@@ -285,20 +302,23 @@ class Turtle(Account):
 # ]
 # print(klineList)
 # klineList=pd.DataFrame(klineList)
+i = 0
 klineList = []
-# for info_key in SECURITY_INFO.keys():
-    # klineList = []
-info_key='螺纹钢'
-file = 'data/{}.csv'.format(SECURITY_INFO[info_key]['jc'] + '8888')
-if os.path.exists(file):
-    klineList.append([info_key, {'security': SECURITY_INFO[info_key]['jc'] + '8888'}])
-    kline = pd.read_csv(file, index_col=0)
-    kline = kline[['close', 'high', 'low']]
-    klineList[len(klineList) - 1][1]['kline'] = kline
-    turtle = Turtle(klineList, 100000)
-    money = turtle.run()
-    print(info_key, '账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
-          money['cash'].values[-1])
+for info_key in SECURITY_INFO.keys():
+    klineList = []
+    # info_key='热轧卷板''
+    # if info_key not in ['螺纹钢','热轧卷板']:
+    #     continue
+    file = 'data/{}.csv'.format(SECURITY_INFO[info_key]['jc'] + '8888')
+    if os.path.exists(file):
+        klineList.append([info_key, {'security': SECURITY_INFO[info_key]['jc'] + '8888'}])
+        kline = pd.read_csv(file, index_col=0)
+        kline = kline[['close', 'high', 'low']]
+        klineList[len(klineList) - 1][1]['kline'] = kline
+        turtle = Turtle(klineList, 100000)
+        money = turtle.run()
+        print(info_key, '账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
+              money['cash'].values[-1])
     # print(money)
     # print(info_key)
 
