@@ -74,8 +74,8 @@ class Turtle:
     ahand_num= 5  #当前品种每手数量
     stop_loss = 0.01 #每个头寸最大亏损
     A_POS_COUNT =4
-    securityName = '棉花'   #
-    security = 'HC8888'
+    securityName = '铝'   #
+    security = 'AL8888'
     ATRTIME = 20  # N=20
     __kline = pd.DataFrame()
     side = 0  # 1多 / -1空
@@ -221,7 +221,7 @@ class Turtle:
 # arr= np.array([1,23])
 # print(arr)
 
-kline = pd.read_csv('data/CF8888.csv', index_col=0)
+kline = pd.read_csv('data/AL8888.csv', index_col=0)
 kline= kline[['close', 'high', 'low']]
 # dels = [0, 4, 5]
 #

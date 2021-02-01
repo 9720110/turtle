@@ -200,9 +200,10 @@ class Account:
                     if (low <= orderItem['price']) and (orderItem['price'] <= high):
                         # 符合要求，成交,获得成交信息,用于返回
                         result = self.deal(orderItem)
-                        for o in orderList[:]:
-                            if (o['security'] == security) and (o['side'] == 0):
-                                o['amount'] += orderItem['amount']
+                        if result ==0:
+                            for o in orderList[:]:
+                                if (o['security'] == security) and (o['side'] == 0):
+                                    o['amount'] += orderItem['amount']
 
         # 第二个for循环，成交平仓挂单
         for orderItem in orderList[:]:
@@ -214,7 +215,6 @@ class Account:
                         orderItem['price'] = close
                         result = self.deal(orderItem)  # 持有多单的时候，跳空低开，挂单止损价格比最高价还高，无法正常止损，则以收盘价止损
                     elif (self.get_position(security)['side'] < 0) and (orderItem['price'] < low):
-
                         orderItem['price'] = close
                         result = self.deal(orderItem)  # 持有空单的时候，跳空高开，挂单止损价格比最低价还低，无法正常止损，则以收盘价止损
 
@@ -255,6 +255,7 @@ class Account:
                     # print('$',position)
                     if position['side'] != orderItem['side']:
                         raise Exception('已有反向持仓，无法交易')
+                    result = 0  #返回值为0  表示加仓
                     # 临时保存交易后的总手数
                     temp = position['holding'] + orderItem['amount']
                     # 计算交易后的平均开仓价格
@@ -359,8 +360,6 @@ class Account:
                 time=time
             )
             # orderItem = pd.Series(orderItem)
-            if time == '2014-04-24':
-                print('here')
             if (security not in self.__positionItem.keys()) and side == 0:
                 logging.error('下单错误，没有持有该合约')
                 # raise Exception('下单错误，没有持有该合约')

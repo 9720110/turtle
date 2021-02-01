@@ -75,6 +75,7 @@ M8888.XDCE
 class Turtle(Account):
     # ahand_num = 10  # 当前品种每手数量
     stop_loss = 0.01  # 每个头寸最大亏损
+    per_cash = 1
     # MAX_POS = 12
     # securityName = '棕榈油'  #
     # security = 'P8888'
@@ -132,6 +133,7 @@ class Turtle(Account):
             k[1]['count_win'] = 0  # 盈利次数
             k[1]['loss'] = 0  # 止损了几个ATR
             k[1]['win'] = 0  # 盈利了几个ATR
+            k[1]['maxATR'] = k[1]['kline']['atr'].max()
 
     def next_time(self):
         self.timeIndex += 1
@@ -162,7 +164,8 @@ class Turtle(Account):
                 if np.isnan(atr):
                     continue
                 if k[1]['posSize'] == 0:
-                    k[1]['posSize'] = int(self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
+                    k[1]['posSize'] = self.per_cash * int(
+                        self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
                 # print(self.time, ' 总资金:', self.cash(), k[0] + '持仓:', k[1]['holding'], '  ATR:', atr, '头寸规模:',
                 #       k[1]['posSize'],
                 #       '可用资金:', self.available(), '保证金:', self.margin())
@@ -175,20 +178,20 @@ class Turtle(Account):
                 if profit is not None:
                     if profit > 0:
                         k[1]['count_win'] += 1  # 盈利次数
-                        k[1]['win'] += round(profit / (k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 盈利了几个ATR
-                        print(k[0], '盈利', k[1]['win'], 'N')
+                        k[1]['win'] = round(k[1]['win'] + profit / k[1]['posSize'] / (
+                                    k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 盈利了几个ATR
+                        # print(k[0], '盈利', round(profit / k[1]['posSize']/ (k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3), 'N')
                     elif profit < 0:
                         k[1]['count_loss'] += 1  # 止损次数
-                        k[1]['loss'] += round(profit / (k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 止损了几个ATR
-                        print(k[0], '止损', k[1]['loss'], 'N')
-
+                        k[1]['loss'] = round(k[1]['loss'] + profit / k[1]['posSize'] / (
+                                    k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 止损了几个ATR
+                        # print(k[0], '止损', round(profit/ k[1]['posSize']/ (k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3), 'N')
                 position = self.get_position(k[1]['security'])
                 orderList = self.get_order()
                 if position is not None:
                     # 海龟系统里记录的持仓数目与账户内不同，说明有新交易
                     if k[1]['holding'] != position['holding']:
                         k[1]['holding'] = position['holding']
-                        # print(k[1]['holding'])
                         k[1]['side'] = position['side']
                         k[1]['level'] = k[1]['holding'] // k[1]['posSize']
                         k[1]['atr'] = k[1]['kline'].loc[position['last_time'], 'atr']
@@ -205,8 +208,6 @@ class Turtle(Account):
                             self.del_order(orderItem)
 
                     # 设立止损单
-                    if self.time == '2014-04-24':
-                        print('im in')
                     if k[1]['side'] > 0:
                         stop_price = max(k[1]['kline'].loc[self.time, 'low10'],
                                          position['opening_price'] + (k[1]['level'] - 1) * 0.25 * k[1]['atr'] - 2 *
@@ -233,9 +234,32 @@ class Turtle(Account):
 
                 if k[1]['holding'] <= 0:
 
+                    if money.loc[self.time, 'cash'] >= 0.9 * money['cash'].max():
+                        self.per_cash = 1
+                    elif money.loc[self.time, 'cash'] >= 0.8 * money['cash'].max():
+                        self.per_cash = 0.5
+                    elif money.loc[self.time, 'cash'] >= 0.7 * money['cash'].max():
+                        self.per_cash = 0.2
+                    elif money.loc[self.time, 'cash'] >= 0.6 * money['cash'].max():
+                        self.per_cash = 0.1
+                    elif money.loc[self.time, 'cash'] >= 0.5 * money['cash'].max():
+                        self.per_cash = 0.1
+                    elif money.loc[self.time, 'cash'] >= 0.4 * money['cash'].max():
+                        self.per_cash = 0.1
+                    elif money.loc[self.time, 'cash'] >= 0.3 * money['cash'].max():
+                        self.per_cash = 0.05
+                    elif money.loc[self.time, 'cash'] >= 0.2 * money['cash'].max():
+                        self.per_cash = 0.05
+                    elif money.loc[self.time, 'cash'] >= 0.1 * money['cash'].max():
+                        self.per_cash = 0.05
+                    elif money.loc[self.time, 'cash'] >= 0 * money['cash'].max():
+                        self.per_cash = 0.05
+                    # print('资金比例', self.per_cash)
+
                     self.clear_order(k[1]['security'])
                     # 头寸规模 = 账户的1 % / (N * 每一点价值)
-                    k[1]['posSize'] = int(self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
+                    k[1]['posSize'] = self.per_cash * int(
+                        self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
                     # print(self.time, ' 总资金:', self.cash(), 'ATR:', atr, '头寸规模:', k[1]['posSize'])
                     if k[1]['posSize'] > 0:
                         for j in range(self.A_POS_COUNT):
@@ -245,21 +269,23 @@ class Turtle(Account):
                             self.add_order(k[0], k[1]['security'], 1, buy_price + n, k[1]['posSize'], self.time)
                             self.add_order(k[0], k[1]['security'], -1, sell_price - n, k[1]['posSize'], self.time)
         #
-        # print('账户最大值:', money['cash'].max())
-        # print('账户最小值:', money['cash'].min())
-        # print('期初账户:', money['cash'].values[0])
-        # print('期末账户余额:', self.cash())
+        print(self.__klineList[0][0], '账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
+              money['cash'].values[-1])
         # money['cash'] = money['cash'] / money['cash'][0]
         # money['cash'].plot(kind='line', title='资金曲线')
         # plt.show()
-        return money
+        win = 0
+        loss = 0
+        count_win = 0
+        count_loss = 0
+        for k in self.__klineList:
+            loss += k[1]['loss']
+            win += k[1]['win']
+            count_win = round(count_win + k[1]['count_win'], 3)
+            count_loss = round(count_loss + k[1]['count_loss'], 3)
 
-    # def add_atr(self):
-    #
-    #     for k in self.__klineList:
-    #         k[1]['kline']['atr'] = round(
-    #             talib.ATR(k[1]['kline']['high'], k[1]['kline']['low'], k[1]['kline']['close'], timeperiod=self.ATRTIME),
-    #             0)
+        print('止损次数', count_loss, '盈利次数', count_win, '止损', loss, '盈利', win)
+        return money
 
     def add_top(self):
         for k in self.__klineList:
@@ -305,22 +331,25 @@ class Turtle(Account):
 i = 0
 klineList = []
 for info_key in SECURITY_INFO.keys():
-    klineList = []
-    # info_key='热轧卷板''
-    # if info_key not in ['螺纹钢','热轧卷板']:
-    #     continue
+    # klineList = []
+    # info_key='玉米'
+    if info_key  in ['螺纹钢','热轧卷板','棉花']:
+         continue
     file = 'data/{}.csv'.format(SECURITY_INFO[info_key]['jc'] + '8888')
     if os.path.exists(file):
         klineList.append([info_key, {'security': SECURITY_INFO[info_key]['jc'] + '8888'}])
         kline = pd.read_csv(file, index_col=0)
         kline = kline[['close', 'high', 'low']]
         klineList[len(klineList) - 1][1]['kline'] = kline
-        turtle = Turtle(klineList, 100000)
-        money = turtle.run()
-        print(info_key, '账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
-              money['cash'].values[-1])
-    # print(money)
-    # print(info_key)
+turtle = Turtle(klineList, 100000)
+money = turtle.run()
+money['cash'] = money['cash'] / money['cash'][0]
+money['cash'].plot(kind='line', title='资金曲线')
+plt.show()
+# print(info_key, '账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
+#       money['cash'].values[-1])
+# print(money)
+# print(info_key)
 
 # print('账户最大值:', money['cash'].max())
 # print('账户最小值:', money['cash'].min())
