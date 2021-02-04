@@ -89,6 +89,7 @@ class Account:
     __positionItem = {}  # 持仓 {'security品种代码RB1605' : {'品种名字 螺纹钢','side开仓方向 1多/-1空' , holding持仓手数 , open_price开仓价格 , new_price现价 , margin保证金}}
     __orderList = []  # 挂单列表[OrderItem()]  包括止损和加仓  ['security品种代码RB1605' , 'side 1开多/-1开空/0平仓' , amount交易手数 , price交易价格]
     max_margin = 100  # 最大保证金比例
+    MAX_POS = 12
 
     def __init__(self, initCash):
         self.__cash = initCash
@@ -183,7 +184,7 @@ class Account:
             profit += (position['current_price'] - position['opening_price']) * position['holding'] * position['side']
         self.__profit = round(profit, 2)
 
-    def refresh(self, security='', high=-1, low=-1, close=-1, reftime=''):
+    def refresh(self, security='', high=-1, low=-1, close=-1, up_pos_count=0, down_pos_count=0, reftime=''):
         result = None
         # 遍历挂单列表比对各项参数，符合要求则交易
         self._ref()
@@ -198,9 +199,13 @@ class Account:
             if orderItem['security'] == security:
                 if orderItem['side'] != 0:
                     if (low <= orderItem['price']) and (orderItem['price'] <= high):
+                        if (orderItem['side']) > 0 and (up_pos_count >= self.MAX_POS):
+                            continue
+                        if (orderItem['side']) < 0 and (-down_pos_count >= self.MAX_POS):
+                            continue
                         # 符合要求，成交,获得成交信息,用于返回
                         result = self.deal(orderItem)
-                        if result ==0:
+                        if result == 0:
                             for o in orderList[:]:
                                 if (o['security'] == security) and (o['side'] == 0):
                                     o['amount'] += orderItem['amount']
@@ -255,7 +260,7 @@ class Account:
                     # print('$',position)
                     if position['side'] != orderItem['side']:
                         raise Exception('已有反向持仓，无法交易')
-                    result = 0  #返回值为0  表示加仓
+                    result = 0  # 返回值为0  表示加仓
                     # 临时保存交易后的总手数
                     temp = position['holding'] + orderItem['amount']
                     # 计算交易后的平均开仓价格

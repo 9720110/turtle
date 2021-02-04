@@ -3,7 +3,7 @@ import talib
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-
+import random
 from futures import Account
 
 from pylab import mpl
@@ -82,6 +82,7 @@ class Turtle(Account):
     ATRTIME = 20  # N=20
     A_POS_COUNT = 4
     __klineList = pd.DataFrame()
+
     # __kline = pd.DataFrame()
     # side = 0  # 1多 / -1空
     # holding = 0  # 记录总共持有多少手
@@ -144,6 +145,9 @@ class Turtle(Account):
             return False
 
     def run(self):
+        up_pos_count = 0
+        down_pos_count = 0
+        min_available = 99999999999
         money = pd.DataFrame()
         money.loc[self.time, 'cash'] = self.cash()  # 期初资金
         # self.__klineList[0][1]['cash'] = self.cash()
@@ -151,6 +155,8 @@ class Turtle(Account):
         # print(self.__klineList[0][1]['kline'].loc[]['atr'])
         for i in self.__klineList[0][1]['kline'].values:
             self.next_time()
+            # print('up_pos_count',up_pos_count,'down_pos_count',down_pos_count)
+
             for k in klineList:
                 if self.cash() < 0:
                     print(k[0], '亏完')
@@ -170,21 +176,44 @@ class Turtle(Account):
                 #       k[1]['posSize'],
                 #       '可用资金:', self.available(), '保证金:', self.margin())
 
+                temp_postion = self.get_position(k[1]['security'])
+                oldPos = 0
+                newPos = 0
+                if temp_postion is not None:
+                    oldPos = temp_postion['holding'] // k[1]['posSize'] * temp_postion['side']
+
                 profit = self.refresh(k[1]['security'],
                                       k[1]['kline'].loc[self.time, 'high'],
                                       k[1]['kline'].loc[self.time, 'low'],
                                       k[1]['kline'].loc[self.time, 'close'],
+                                      up_pos_count,
+                                      down_pos_count,
                                       self.time)
+
+                temp_postion = self.get_position(k[1]['security'])
+                if temp_postion is not None:
+                    newPos = temp_postion['holding'] // k[1]['posSize'] * temp_postion['side']
+                if newPos != oldPos:
+                    if oldPos > 0:
+                        up_pos_count = up_pos_count - oldPos
+                    elif oldPos < 0:
+                        down_pos_count = down_pos_count - oldPos
+
+                    if newPos >0:
+                        up_pos_count = up_pos_count+ newPos
+                    elif newPos <0:
+                        down_pos_count = down_pos_count +newPos
+
                 if profit is not None:
                     if profit > 0:
                         k[1]['count_win'] += 1  # 盈利次数
                         k[1]['win'] = round(k[1]['win'] + profit / k[1]['posSize'] / (
-                                    k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 盈利了几个ATR
+                                k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 盈利了几个ATR
                         # print(k[0], '盈利', round(profit / k[1]['posSize']/ (k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3), 'N')
                     elif profit < 0:
                         k[1]['count_loss'] += 1  # 止损次数
                         k[1]['loss'] = round(k[1]['loss'] + profit / k[1]['posSize'] / (
-                                    k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 止损了几个ATR
+                                k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3)  # 止损了几个ATR
                         # print(k[0], '止损', round(profit/ k[1]['posSize']/ (k[1]['atr'] * SECURITY_INFO[k[0]]['trading_unit']), 3), 'N')
                 position = self.get_position(k[1]['security'])
                 orderList = self.get_order()
@@ -258,8 +287,7 @@ class Turtle(Account):
 
                     self.clear_order(k[1]['security'])
                     # 头寸规模 = 账户的1 % / (N * 每一点价值)
-                    k[1]['posSize'] = self.per_cash * int(
-                        self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
+                    k[1]['posSize'] = int(self.per_cash*self.cash() * self.stop_loss / (atr * SECURITY_INFO[k[0]]['trading_unit']))
                     # print(self.time, ' 总资金:', self.cash(), 'ATR:', atr, '头寸规模:', k[1]['posSize'])
                     if k[1]['posSize'] > 0:
                         for j in range(self.A_POS_COUNT):
@@ -268,8 +296,13 @@ class Turtle(Account):
                             sell_price = int(sell_price)
                             self.add_order(k[0], k[1]['security'], 1, buy_price + n, k[1]['posSize'], self.time)
                             self.add_order(k[0], k[1]['security'], -1, sell_price - n, k[1]['posSize'], self.time)
+
+                min_available = min(min_available, self.available())
+                # if min_available < 0:
+                #     print(self.time, '爆仓')
+                #     return money
         #
-        print(self.__klineList[0][0], '账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
+        print('账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
               money['cash'].values[-1])
         # money['cash'] = money['cash'] / money['cash'][0]
         # money['cash'].plot(kind='line', title='资金曲线')
@@ -279,12 +312,12 @@ class Turtle(Account):
         count_win = 0
         count_loss = 0
         for k in self.__klineList:
-            loss += k[1]['loss']
-            win += k[1]['win']
+            loss = round(loss+k[1]['loss'],3)
+            win = round(win+k[1]['win'],3)
             count_win = round(count_win + k[1]['count_win'], 3)
             count_loss = round(count_loss + k[1]['count_loss'], 3)
 
-        print('止损次数', count_loss, '盈利次数', count_win, '止损', loss, '盈利', win)
+        print('止损次数', count_loss, '盈利次数', count_win, '止损', loss, '盈利', win, '最小可用资金', min_available)
         return money
 
     def add_top(self):
@@ -332,20 +365,25 @@ i = 0
 klineList = []
 for info_key in SECURITY_INFO.keys():
     # klineList = []
-    # info_key='玉米'
-    if info_key  in ['螺纹钢','热轧卷板','棉花']:
-         continue
+    # info_key='白银'
+    # if info_key  in ['螺纹钢','热轧卷板','棉花']:
+    #       continue
+    # if random.randint(0, 10) > 5:
+    #     continue
+
     file = 'data/{}.csv'.format(SECURITY_INFO[info_key]['jc'] + '8888')
     if os.path.exists(file):
+        print(info_key)
         klineList.append([info_key, {'security': SECURITY_INFO[info_key]['jc'] + '8888'}])
         kline = pd.read_csv(file, index_col=0)
         kline = kline[['close', 'high', 'low']]
         klineList[len(klineList) - 1][1]['kline'] = kline
-turtle = Turtle(klineList, 100000)
+turtle = Turtle(klineList, 1000000)
 money = turtle.run()
-money['cash'] = money['cash'] / money['cash'][0]
-money['cash'].plot(kind='line', title='资金曲线')
-plt.show()
+
+# money['cash'] = money['cash'] / money['cash'][0]
+# money['cash'].plot(kind='line', title='资金曲线')
+# plt.show()
 # print(info_key, '账户最大值:', money['cash'].max(), '账户最小值:', money['cash'].min(), '期末账户余额:',
 #       money['cash'].values[-1])
 # print(money)
